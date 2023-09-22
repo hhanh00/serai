@@ -13,14 +13,9 @@ use curve25519_dalek::edwards::{EdwardsPoint, CompressedEdwardsY};
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
+use epee_encoding::{EpeeObject, from_bytes, to_bytes};
 
-use crate::{
-  Protocol,
-  serialize::*,
-  transaction::{Input, Timelock, Transaction},
-  block::Block,
-  wallet::{FeePriority, Fee},
-};
+use crate::{Protocol, serialize::*, transaction::{Input, Timelock, Transaction}, block::Block, wallet::{FeePriority, Fee}, block};
 
 #[cfg(feature = "http_rpc")]
 mod http;
@@ -335,6 +330,32 @@ impl<R: RpcConnection> Rpc<R> {
     number: usize,
   ) -> Result<Vec<Transaction>, RpcError> {
     self.get_block_transactions(self.get_block_hash(number).await?).await
+  }
+
+  pub async fn get_blocks_bin(&self, start: usize, len: usize) -> Result<Vec<block::CompleteBlock>, RpcError> {
+    let heights = (start as u64..(start+len) as u64).collect::<Vec<_>>();
+    let heights = Heights {
+      heights
+    };
+    let request = to_bytes(&heights).unwrap();
+    let rep_bytes = self.bin_call("get_blocks_by_height.bin", request).await?;
+    println!("{}", hex::encode(&rep_bytes));
+    let rep_blocks: Blocks = from_bytes(&rep_bytes).map_err(|_| RpcError::InvalidNode)?;
+    let mut blocks = vec![];
+    for b in rep_blocks.blocks.iter() {
+      let block = Block::read(&mut b.block.as_slice()).map_err(|_| RpcError::InvalidNode)?;
+      let mut txs = vec![];
+      for tx in b.txs.iter() {
+        let tx = Transaction::read(&mut tx.as_slice()).map_err(|_| RpcError::InvalidNode)?;
+        txs.push(tx);
+      }
+      blocks.push(block::CompleteBlock {
+        block,
+        txs,
+      });
+    }
+
+    Ok(blocks)
   }
 
   /// Get the output indexes of the specified transaction.
@@ -740,4 +761,22 @@ impl<R: RpcConnection> Rpc<R> {
     }
     Ok(blocks)
   }
+}
+
+#[derive(EpeeObject)]
+struct Heights {
+  pub heights: Vec<u64>,
+}
+
+#[derive(EpeeObject)]
+struct Blocks {
+  pub blocks: Vec<CompleteBlock>,
+  pub status: String,
+  pub untrusted: bool,
+}
+
+#[derive(EpeeObject)]
+struct CompleteBlock {
+  pub block: Vec<u8>,
+  pub txs: Vec<Vec<u8>>,
 }

@@ -114,3 +114,8 @@ impl Block {
     })
   }
 }
+
+pub struct CompleteBlock {
+  pub block: Block,
+  pub txs: Vec<Transaction>,
+}
