@@ -339,7 +339,6 @@ impl<R: RpcConnection> Rpc<R> {
     };
     let request = to_bytes(&heights).unwrap();
     let rep_bytes = self.bin_call("get_blocks_by_height.bin", request).await?;
-    println!("{}", hex::encode(&rep_bytes));
     let rep_blocks: Blocks = from_bytes(&rep_bytes).map_err(|_| RpcError::InvalidNode)?;
     let mut blocks = vec![];
     for b in rep_blocks.blocks.iter() {

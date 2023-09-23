@@ -24,7 +24,7 @@ pub mod address;
 use address::{Network, AddressType, SubaddressIndex, AddressSpec, AddressMeta, MoneroAddress};
 
 mod scan;
-pub use scan::{ReceivedOutput, SpendableOutput, Timelocked};
+pub use scan::{ReceivedOutput, SpendableOutput, Timelocked, AbsoluteId, Metadata, OutputData};
 
 pub mod decoys;
 pub use decoys::Decoys;
@@ -76,6 +76,7 @@ pub(crate) fn shared_key(
   // || o
   write_varint(&o.try_into().unwrap(), &mut output_derivation).unwrap();
 
+  println!("output_derivation {}", hex::encode(&output_derivation));
   let view_tag = hash(&[b"view_tag".as_ref(), &output_derivation].concat())[0];
 
   // uniqueness ||
@@ -101,7 +102,7 @@ pub(crate) fn amount_encryption(amount: u64, key: Scalar) -> [u8; 8] {
 }
 
 // TODO: Move this under EncryptedAmount?
-fn amount_decryption(amount: &EncryptedAmount, key: Scalar) -> (Scalar, u64) {
+pub fn amount_decryption(amount: &EncryptedAmount, key: Scalar) -> (Scalar, u64) {
   match amount {
     EncryptedAmount::Original { mask, amount } => {
       #[cfg(feature = "experimental")]
@@ -136,8 +137,8 @@ fn amount_decryption(amount: &EncryptedAmount, key: Scalar) -> (Scalar, u64) {
 /// The private view key and public spend key, enabling scanning transactions.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct ViewPair {
-  spend: EdwardsPoint,
-  view: Zeroizing<Scalar>,
+  pub spend: EdwardsPoint,
+  pub view: Zeroizing<Scalar>,
 }
 
 impl ViewPair {

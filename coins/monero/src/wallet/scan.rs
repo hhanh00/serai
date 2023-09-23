@@ -1,4 +1,5 @@
 use core::ops::Deref;
+use std::io::Cursor;
 use std_shims::{
   vec::Vec,
   io::{self, Read, Write},
@@ -7,6 +8,7 @@ use std_shims::{
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use curve25519_dalek::{constants::ED25519_BASEPOINT_TABLE, scalar::Scalar, edwards::EdwardsPoint};
+use group::GroupEncoding;
 
 use crate::{
   Commitment,
@@ -276,6 +278,17 @@ impl SpendableOutput {
   pub fn read<R: Read>(r: &mut R) -> io::Result<SpendableOutput> {
     Ok(SpendableOutput { output: ReceivedOutput::read(r)?, global_index: read_u64(r)? })
   }
+
+  pub fn from_bytes(buf: &[u8]) -> Self {
+    let mut c = Cursor::new(buf);
+    Self::read(&mut c).unwrap()
+  }
+
+  pub fn to_bytes(&self) -> Vec<u8> {
+    let mut buf = vec![];
+    self.write(&mut buf).unwrap();
+    buf
+  }
 }
 
 /// A collection of timelocked outputs, either received or spendable.
@@ -322,6 +335,7 @@ impl<O: Clone + Zeroize> Timelocked<O> {
 impl Scanner {
   /// Scan a transaction to discover the received outputs.
   pub fn scan_transaction(&mut self, tx: &Transaction) -> Timelocked<ReceivedOutput> {
+    println!("tx id {}", hex::encode(&tx.hash()));
     // Only scan RCT TXs since we can only spend RCT outputs
     if tx.prefix.version != 2 {
       return Timelocked(tx.prefix.timelock, vec![]);
@@ -335,6 +349,7 @@ impl Scanner {
       return Timelocked(tx.prefix.timelock, vec![]);
     };
 
+    println!("tx key {}", hex::encode(tx_key.to_bytes()));
     let payment_id = extra.payment_id();
 
     let mut res = vec![];
@@ -351,6 +366,7 @@ impl Scanner {
         continue;
       }
       let output_key = output_key.unwrap();
+      println!("output key {}", hex::encode(output_key.to_bytes()));
 
       for key in [Some(Some(&tx_key)), additional.as_ref().map(|additional| additional.get(o))] {
         let key = if let Some(Some(key)) = key {
@@ -370,6 +386,8 @@ impl Scanner {
           self.pair.view.deref() * key,
           o,
         );
+        println!("tag {}", view_tag);
+        println!("shared_key {}", hex::encode(shared_key.to_bytes()));
 
         let payment_id =
           if let Some(PaymentId::Encrypted(id)) = payment_id.map(|id| id ^ payment_id_xor) {
@@ -379,10 +397,13 @@ impl Scanner {
           };
 
         if let Some(actual_view_tag) = output.view_tag {
+          println!("actual_view_tag {actual_view_tag}");
           if actual_view_tag != view_tag {
             continue;
           }
         }
+
+        println!("VIEW TAG OK");
 
         // P - shared == spend
         let subaddress =
@@ -391,6 +412,7 @@ impl Scanner {
           continue;
         }
         let subaddress = *subaddress.unwrap();
+        println!("DECRYPT OK");
 
         // If it has torsion, it'll substract the non-torsioned shared key to a torsioned key
         // We will not have a torsioned key in our HashMap of keys, so we wouldn't identify it as

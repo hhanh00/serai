@@ -54,6 +54,7 @@ serde_json = { version = "1", default-features = false, features = ["alloc"] }
 
 base58-monero = { version = "2", default-features = false, features = ["check"] }
 epee-encoding = "0.5.0"
+byteorder = "1.4.3"
 
 # Used for the provided RPC
 digest_auth = { version = "0.3", optional = true }

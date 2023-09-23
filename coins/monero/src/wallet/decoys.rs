@@ -1,3 +1,6 @@
+use std::io;
+use std::io::{Cursor, Read, Write};
+use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use std_shims::{sync::OnceLock, vec::Vec, collections::HashSet};
 
 #[cfg(not(feature = "std"))]
@@ -12,13 +15,14 @@ use rand_distr::{Distribution, Gamma};
 #[cfg(not(feature = "std"))]
 use rand_distr::num_traits::Float;
 
-use curve25519_dalek::edwards::EdwardsPoint;
+use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 
 use crate::{
   serialize::varint_len,
   wallet::SpendableOutput,
   rpc::{RpcError, RpcConnection, Rpc},
 };
+use crate::serialize::write_varint;
 
 const LOCK_WINDOW: usize = 10;
 const MATURITY: u64 = 60;
@@ -280,5 +284,52 @@ impl Decoys {
     }
 
     Ok(res)
+  }
+
+  pub fn read<R: Read>(r: &mut R) -> io::Result<Decoys> {
+    let i = r.read_u8()?;
+    let n = r.read_u32::<LE>()? as usize;
+    let mut offsets = vec![];
+    let mut ring = vec![];
+    for _ in 0..n {
+      offsets.push(r.read_u64::<LE>()?);
+    }
+    for _ in 0..n {
+      let mut p = [0u8; 32];
+      r.read_exact(&mut p)?;
+      let p1 = CompressedEdwardsY::from_slice(&p).unwrap().decompress().unwrap();
+      r.read_exact(&mut p)?;
+      let p2 = CompressedEdwardsY::from_slice(&p).unwrap().decompress().unwrap();
+      ring.push([p1, p2]);
+    }
+    Ok(Decoys {
+      i,
+      offsets,
+      ring,
+    })
+  }
+
+  pub fn write<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    w.write_u8(self.i)?;
+    w.write_u32::<LE>(self.offsets.len() as u32)?;
+    for &o in self.offsets.iter() {
+      w.write_u64::<LE>(o)?;
+    }
+    for &o in self.ring.iter() {
+      w.write_all(o[0].compress().as_bytes())?;
+      w.write_all(o[1].compress().as_bytes())?;
+    }
+    Ok(())
+  }
+
+  pub fn from_bytes(buf: &[u8]) -> Self {
+    let mut c = Cursor::new(buf);
+    Self::read(&mut c).unwrap()
+  }
+
+  pub fn to_bytes(&self) -> Vec<u8> {
+    let mut buf = vec![];
+    self.write(&mut buf).unwrap();
+    buf
   }
 }
